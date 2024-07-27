@@ -13,12 +13,12 @@ bool generate_assembly(Instructions *ins, const char *filename)
     fprintf(stderr, "COMPILATION ERROR: couldn't generate assembly with %s filename.\n", filename);
     return false;
   }
-  fprintf(f, "section .data\n");
-  fprintf(f, "  bytesarr times %d db 0\n", MAX_BYTES);
-  fprintf(f, "  pos dd 0\n");
+  fprintf(f, "        .bss\n");
+  fprintf(f, "bytesarr: .zero %d\n", MAX_BYTES);
+  fprintf(f, "pos:    .long 0\n");
 
-  fprintf(f, "section .text\n");
-  fprintf(f, "  global _start\n");
+  fprintf(f, "        .text\n");
+  fprintf(f, "        .globl _start\n");
 
   fprintf(f, "_start:\n");
   int ip = 0;
@@ -27,68 +27,68 @@ bool generate_assembly(Instructions *ins, const char *filename)
   while (in.kind != END_OF_FILE) {
     switch (in.kind) {
       case INCREMENT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  add byte [bytesarr + ebx], %d\n", in.value);
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  addb $%d, bytesarr(%%rbx)\n", in.value);
         in = ins->items[++ip];
       } break;
 
       case DECREMENT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  sub byte [bytesarr + ebx], %d\n", in.value);
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  subb $%d, bytesarr(%%rbx)\n", in.value);
         in = ins->items[++ip];
       } break;
 
       case INPUT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
         for (int i = 0; i < in.value; i++) {
-          fprintf(f, "  mov rax, 0\n");
-          fprintf(f, "  mov rdi, 0\n");
-          fprintf(f, "  lea rsi, [bytesarr + ebx]\n");
-          fprintf(f, "  mov rdx, 1\n");
+          fprintf(f, "  xor %%eax, %%eax\n");
+          fprintf(f, "  xor %%edi, %%edi\n");
+          fprintf(f, "  lea rsi, bytesarr(%%rbx), %%rsi\n");
+          fprintf(f, "  mov $1, %%rdx\n");
           fprintf(f, "  syscall\n");
         }
         in = ins->items[++ip];
       } break;
 
       case OUTPUT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
         for (int i = 0; i < in.value; i++) {
-          fprintf(f, "  mov rax, 1\n");
-          fprintf(f, "  mov rdi, 1\n");
-          fprintf(f, "  lea rsi, [bytesarr + ebx]\n");
-          fprintf(f, "  mov rdx, 1\n");
+          fprintf(f, "  mov $1, %%rax\n");
+          fprintf(f, "  mov $1, %%rdi\n");
+          fprintf(f, "  lea bytesarr(%%rbx), %%rsi\n");
+          fprintf(f, "  mov $1, %%rdx\n");
           fprintf(f, "  syscall\n");
         }
         in = ins->items[++ip];
       } break;
 
       case SHIFT_RIGHT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  add ebx, %d\n", in.value);
-        fprintf(f, "  mov [pos], ebx\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  add $%d, %%ebx\n", in.value);
+        fprintf(f, "  mov %%ebx, (pos)\n");
         in = ins->items[++ip];
       } break;
 
       case SHIFT_LEFT: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  sub ebx, %d\n", in.value);
-        fprintf(f, "  mov [pos], ebx\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  sub $%d, %%ebx\n", in.value);
+        fprintf(f, "  mov %%ebx, (pos)\n");
         in = ins->items[++ip];
       } break;
 
       case IF_ZERO: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  mov al, byte [bytesarr + ebx]\n");
-        fprintf(f, "  test al, al\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  mov bytesarr(%%rbx), %%al\n");
+        fprintf(f, "  test %%al, %%al\n");
         fprintf(f, "  jz addr_%d\n", in.value);
         fprintf(f, "addr_%d:\n", ip + 1);
         in = ins->items[++ip];
       } break;
 
      case IF_NZERO: {
-        fprintf(f, "  mov ebx, dword [pos]\n");
-        fprintf(f, "  mov al, byte [bytesarr + ebx]\n");
-        fprintf(f, "  test al, al\n");
+        fprintf(f, "  mov (pos), %%ebx\n");
+        fprintf(f, "  mov bytesarr(%%rbx), %%al\n");
+        fprintf(f, "  test %%al, %%al\n");
         fprintf(f, "  jnz addr_%d\n", in.value);
         fprintf(f, "addr_%d:\n", ip + 1);
         in = ins->items[++ip];
@@ -100,8 +100,8 @@ bool generate_assembly(Instructions *ins, const char *filename)
       } break;
     }
   }
-  fprintf(f, "  mov rax, 60\n");
-  fprintf(f, "  mov rdi, 0\n");
+  fprintf(f, "  mov $60, %%eax\n");
+  fprintf(f, "  xor %%edi, %%edi\n");
   fprintf(f, "  syscall\n");
   res = true;
   fclose(f);
@@ -111,7 +111,7 @@ bool generate_assembly(Instructions *ins, const char *filename)
 
 bool compile_assembly(const char *output_name)
 {
-  if (system("nasm -f ELF64 -g source.asm -o source.o") != 0) {
+  if (system("as -g source.asm -o source.o") != 0) {
     fprintf(stderr, "COMPILATION ERROR: couldn't produce the object file.\n");
     return false;
   }
